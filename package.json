@@ -1,0 +1,31 @@
+{
+  "name": "discord-voice-recorder",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "ts-node src/bot.ts",
+    "build": "tsc",
+    "dev": "ts-node --watch src/bot.ts",
+    "clean": "rm -rf recordings/*.pcm recordings/*.wav",
+    "clean:all": "rm -rf recordings/* && echo '1399594930355306650' > recordings/saved_channel.txt"
+  },
+  "keywords": ["discord", "voice", "recorder", "transcription", "whisper"],
+  "author": "",
+  "license": "ISC",
+  "description": "Discord voice recorder with real-time transcription using Colab API",
+  "dependencies": {
+    "@discordjs/opus": "^0.10.0",
+    "@discordjs/voice": "^0.18.0",
+    "axios": "^1.11.0",
+    "discord.js": "^14.21.0",
+    "dotenv": "^17.2.1",
+    "prism-media": "^1.3.5",
+    "wav": "^1.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.1.0",
+    "@types/wav": "^1.0.4",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3"
+  }
+}
