@@ -3,9 +3,13 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "start": "ts-node src/bot.ts",
+    "start": "node dist/bot.js",
+    "start:ts": "ts-node src/bot.ts",
     "build": "tsc",
     "dev": "ts-node --watch src/bot.ts",
+    "test:matcher": "node test/test-task-matcher.js",
+    "test:clickup": "node test/test-clickup-api.js",
+    "test:all": "npm run test:clickup && npm run test:matcher",
     "clean": "rm -rf recordings/*.pcm recordings/*.wav",
     "clean:all": "rm -rf recordings/* && echo '1399594930355306650' > recordings/saved_channel.txt"
   },

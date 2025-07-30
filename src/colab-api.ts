@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync, unlinkSync } from 'fs'
 import { TranscriptionResult } from './transcriber'
 
 // ใส่ URL จาก ngrok ที่ได้จาก Colab
-const COLAB_API_URL = 'https://15f7768c913f.ngrok-free.app' // ✅ URL จริงจาก ngrok
+const COLAB_API_URL = 'https://2b52fcc3a7c1.ngrok-free.app' // ✅ URL จริงจาก ngrok
 
 // ฟังก์ชันตรวจสอบขนาดไฟล์
 function getAudioFileSize(audioBuffer: Buffer): number {
