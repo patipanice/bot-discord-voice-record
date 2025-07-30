@@ -86,7 +86,6 @@ client.once('ready', async () => {
 })
 
 client.on('messageCreate', async (message) => {
-    console.log(message.content)
   if (message.content === '!join' && message.member?.voice.channel) {
     const channel = message.member.voice.channel
     if (channel.type === 2) { // VoiceChannel type
