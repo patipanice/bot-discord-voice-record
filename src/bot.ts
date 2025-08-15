@@ -1,9 +1,18 @@
-import { Client, GatewayIntentBits, AttachmentBuilder, EmbedBuilder, TextChannel, ButtonBuilder, ActionRowBuilder, ButtonStyle, ComponentType } from 'discord.js'
+import { Client, GatewayIntentBits, AttachmentBuilder, EmbedBuilder, TextChannel } from 'discord.js'
 import * as dotenv from 'dotenv'
 import { joinVoiceAndRecord, leaveVoiceChannel } from './recorder'
 import { readFileSync, existsSync, writeFileSync } from 'fs'
+import { searchAllTeamTasks, searchUserTasksByEmail, updateTaskStatusById } from './clickup-api'
 import { matchTasksWithSpeech, TaskMatch } from './task-matcher'
-import { clickUpAPI, searchAllTeamTasks, searchUserTasksByEmail, updateTaskStatusById } from './clickup-api'
+import { ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js'
+
+// Services & BLL
+import { ClickUpService } from './services/clickup.service'
+import { TranscriptManagerService } from './services/transcript-manager.service'
+import { UserMappingService } from './services/user-mapping.service'
+import { DiscordService } from './services/discord.service'
+import { TaskMatchingBLL } from './bll/task-matching.bll'
+import { ClickUpIntegrationConfig } from './types/clickup.types'
 
 dotenv.config()
 
@@ -32,14 +41,18 @@ function formatTimestamp(timestamp: string): string {
 
 // ตัวแปร global สำหรับเก็บ channel ที่จะส่งข้อความ
 let transcriptChannel: TextChannel | null = null
-let isRecording = false // สถานะการบันทึก
-let sessionTranscripts: Array<{userId: string, transcript: string, confidence: number, timestamp: string}> = [] // เก็บ transcripts ในเซสชัน
 let pendingTranscriptions = 0 // จำนวนการแปลงเสียงที่ยังไม่เสร็จ
+
+// Services & BLL
+let clickUpService: ClickUpService
+let transcriptManager: TranscriptManagerService
+let userMappingService: UserMappingService
+let discordService: DiscordService
+let taskMatchingBLL: TaskMatchingBLL
 
 // ตัวแปรสำหรับ ClickUp integration
 let clickUpEnabled = false // สถานะการเปิดใช้ ClickUp
 let userClickUpTasks: Array<{id: string, name: string, description?: string, url: string}> = [] // Cache tasks ของ user
-let userMapping: Record<string, string> = {} // Discord ID → ClickUp email mapping
 
 // ฟังก์ชันสำหรับโหลด channel ที่บันทึกไว้
 function loadSavedChannel() {
@@ -65,32 +78,29 @@ function saveChannel(channelId: string) {
   }
 }
 
-// ฟังก์ชันโหลด user mapping จากไฟล์
-function loadUserMapping(): void {
-  try {
-    if (existsSync('config/user-mapping.json')) {
-      const mappingData = readFileSync('config/user-mapping.json', 'utf8')
-      userMapping = JSON.parse(mappingData)
-      console.log(`📋 โหลด user mapping: ${Object.keys(userMapping).length} users`)
-    } else {
-      console.log('📋 ไม่พบ config/user-mapping.json สร้างไฟล์ใหม่')
-      userMapping = {}
-      saveUserMapping()
-    }
-  } catch (error) {
-    console.error('❌ เกิดข้อผิดพลาดในการโหลด user mapping:', error)
-    userMapping = {}
-  }
-}
+// Initialize services and BLL
+function initializeServices(): void {
+  // Initialize UserMappingService
+  userMappingService = new UserMappingService({
+    filePath: 'config/user-mapping.json'
+  })
 
-// ฟังก์ชันบันทึก user mapping ลงไฟล์
-function saveUserMapping(): void {
-  try {
-    writeFileSync('config/user-mapping.json', JSON.stringify(userMapping, null, 2), 'utf8')
-    console.log('💾 บันทึก user mapping')
-  } catch (error) {
-    console.error('❌ เกิดข้อผิดพลาดในการบันทึก user mapping:', error)
-  }
+  // Initialize TranscriptManagerService  
+  transcriptManager = new TranscriptManagerService()
+
+  // Initialize ClickUpService
+  clickUpService = new ClickUpService({
+    enabled: false,
+    tasks: []
+  })
+
+  // Initialize DiscordService
+  discordService = new DiscordService(client)
+
+  // Initialize BLL
+  taskMatchingBLL = new TaskMatchingBLL()
+
+  console.log('🔧 Services and BLL initialized')
 }
 
 // ฟังก์ชันเริ่มต้น ClickUp integration
@@ -98,17 +108,17 @@ async function initializeClickUp(): Promise<boolean> {
   try {
     console.log('🔗 เริ่มต้น ClickUp integration...')
     
-    // โหลด user mapping
-    loadUserMapping()
-    
-    // ทดสอบการเชื่อมต่อ
-    const connected = await clickUpAPI.testConnection()
+    // ทดสอบการเชื่อมต่อผ่าน ClickUpService
+    const connected = await clickUpService.testConnection()
     if (!connected) {
       console.log('⚠️ ไม่สามารถเชื่อมต่อ ClickUp API')
       return false
     }
     
     clickUpEnabled = true
+    // อัปเดต ClickUpService config
+    clickUpService.updateConfig({ enabled: true, tasks: userClickUpTasks })
+    
     console.log('✅ ClickUp integration พร้อมใช้งาน')
     return true
   } catch (error) {
@@ -117,23 +127,10 @@ async function initializeClickUp(): Promise<boolean> {
   }
 }
 
-// ฟังก์ชันโหลด tasks ของ user จาก ClickUp
+// ฟังก์ชันโหลด tasks ของ user จาก ClickUp (ใช้ Service)
 async function loadUserTasks(email: string): Promise<void> {
   try {
-    console.log(`📋 โหลด tasks ของ user: ${email}`)
-    
-    const tasks = await searchUserTasksByEmail(email, {
-      include_closed: false
-    })
-    
-    userClickUpTasks = tasks.map(task => ({
-      id: task.id,
-      name: task.name,
-      description: task.description,
-      url: task.url
-    }))
-    
-    console.log(`✅ โหลด ${userClickUpTasks.length} tasks`)
+    userClickUpTasks = await clickUpService.loadUserTasks(email)
   } catch (error) {
     console.error('❌ เกิดข้อผิดพลาดในการโหลด tasks:', error)
     userClickUpTasks = []
@@ -530,32 +527,200 @@ client.on('messageCreate', async (message) => {
   }
 })
 
+// ฟังก์ชันตรวจสอบข้อความที่ผิดปกติ
+function isInvalidTranscript(transcript: string): boolean {
+  const trimmed = transcript.trim()
+  
+  // 1. ตรวจสอบข้อความสั้นเกินไป
+  if (trimmed.length < 3) {
+    console.log(`⚠️ FILTERED: Transcript สั้นเกินไป: "${trimmed}"`)
+    return true
+  }
+  
+  // 2. ตรวจสอบคำซ้ำผิดปกติ
+  const words = trimmed.split(/\s+/)
+  if (words.length > 10) {
+    const wordCount = new Map<string, number>()
+    
+    for (const word of words) {
+      if (word.length > 0) {
+        wordCount.set(word, (wordCount.get(word) || 0) + 1)
+      }
+    }
+    
+    // หาคำที่ซ้ำมากที่สุด
+    for (const [word, count] of wordCount) {
+      const percentage = count / words.length
+      if (percentage > 0.5 && count > 10) {
+        console.log(`⚠️ FILTERED: คำ "${word}" ซ้ำผิดปกติ: ${count}/${words.length} ครั้ง (${(percentage * 100).toFixed(1)}%)`)
+        return true
+      }
+    }
+  }
+  
+  // 3. ตรวจสอบ pattern ซ้ำ (เช่น "สวัสดีครับ สวัสดีครับ...")
+  if (trimmed.length > 50) {
+    // เอาส่วนแรก 20 ตัวอักษรมาหา pattern
+    const firstPart = trimmed.substring(0, 20)
+    const escapedPart = firstPart.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    
+    try {
+      const regex = new RegExp(escapedPart, 'g')
+      const matches = trimmed.match(regex) || []
+      
+      if (matches.length > 5) {
+        console.log(`⚠️ FILTERED: Pattern "${firstPart}" ซ้ำผิดปกติ: ${matches.length} ครั้ง`)
+        return true
+      }
+    } catch (error) {
+      // หาก regex ผิดพลาด ให้ผ่าน
+      console.log(`⚠️ Regex error สำหรับ pattern: ${firstPart}`)
+    }
+  }
+  
+  return false // ข้อความปกติ
+}
+
+// ฟังก์ชันส่ง transcript ไป Discord ทันที
+async function sendTranscriptToDiscord(userId: string, transcript: string, confidence: number): Promise<void> {
+  try {
+    if (!transcriptChannel) return
+    
+    const guild = transcriptChannel.guild
+    const displayName = await getUserDisplayName(userId, guild)
+    const timestamp = new Date().toLocaleString('th-TH', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    })
+    
+    // 🎯 ตรวจสอบ ClickUp task matching
+    let taskMatches: TaskMatch[] = []
+    let hasTaskMatch = false
+    
+    if (clickUpEnabled && userClickUpTasks.length > 0) {
+      const matchResult = matchTasksWithSpeech(transcript, userClickUpTasks)
+      const goodMatches = matchResult.matches.filter(match => 
+        match.confidence === 'high' || match.confidence === 'medium'
+      )
+      
+      if (goodMatches.length > 0) {
+        taskMatches = goodMatches.slice(0, 1) // เอาแค่ match แรก
+        hasTaskMatch = true
+        console.log(`🎯 Found ClickUp match: ${taskMatches[0].taskName}`)
+      }
+    }
+    
+    // 🎨 สร้าง embed ตาม type ของ conversation
+    const embed = new EmbedBuilder()
+      .setAuthor({
+        name: `${displayName} • ${timestamp}`,
+        iconURL: `https://cdn.discordapp.com/avatars/${userId}/avatar.png`
+      })
+      .setDescription(`🎤 "${transcript}"`)
+      .setColor(hasTaskMatch ? 0x007acc : 0x00ff00) // น้ำเงินถ้ามี task match, เขียวถ้าไม่มี
+      .setTimestamp()
+    
+    // เพิ่ม confidence field
+    embed.addFields({
+      name: 'ความแม่นยำ',
+      value: `${(confidence * 100).toFixed(1)}%`,
+      inline: true
+    })
+    
+    // 🎯 เพิ่ม ClickUp match info ถ้ามี
+    if (hasTaskMatch) {
+      const match = taskMatches[0]
+      embed.addFields({
+        name: '🎯 ClickUp Task Match',
+        value: `**${match.taskName}**\nความมั่นใจ: ${(match.matchScore * 100).toFixed(1)}% (${match.confidence})\n[ดู Task ใน ClickUp](${match.taskUrl})`,
+        inline: false
+      })
+      
+      if (match.matchedKeywords.length > 0) {
+        embed.addFields({
+          name: '🔍 Keywords ที่จับได้',
+          value: match.matchedKeywords.join(', '),
+          inline: true
+        })
+      }
+    }
+    
+    // 🎮 สร้าง action buttons ถ้ามี task match
+    const components: ActionRowBuilder<ButtonBuilder>[] = []
+    
+    if (hasTaskMatch) {
+      const match = taskMatches[0]
+      const buttons = new ActionRowBuilder<ButtonBuilder>()
+        .addComponents(
+          new ButtonBuilder()
+            .setCustomId(`complete_task_${match.taskId}`)
+            .setLabel('✅ Mark Complete')
+            .setStyle(ButtonStyle.Success),
+          new ButtonBuilder()
+            .setCustomId(`progress_task_${match.taskId}`)
+            .setLabel('📝 Set To Do')
+            .setStyle(ButtonStyle.Primary),
+          new ButtonBuilder()
+            .setCustomId(`ignore_match_${match.taskId}`)
+            .setLabel('❌ Ignore')
+            .setStyle(ButtonStyle.Secondary)
+        )
+      
+      components.push(buttons)
+    }
+    
+    // ส่งข้อความไปยัง Discord
+    const messageOptions: any = { embeds: [embed] }
+    if (components.length > 0) {
+      messageOptions.components = components
+    }
+    
+    await transcriptChannel.send(messageOptions)
+    console.log(`📤 ส่ง real-time transcript: "${transcript}" ${hasTaskMatch ? '(with ClickUp match)' : '(casual)'}`)
+    
+  } catch (error) {
+    console.error('❌ เกิดข้อผิดพลาดในการส่ง transcript ไป Discord:', error)
+  }
+}
+
 // ฟังก์ชันสำหรับเก็บ transcript ในเซสชัน
 export async function addSessionTranscript(userId: string, transcript: string, confidence: number) {
   console.log(`🔍 addSessionTranscript: isRecording = ${isRecording}`)
   console.log(`🔍 addSessionTranscript: transcript = "${transcript}"`)
   
-  // เก็บ transcript ทุกครั้งจนกว่าจะ clear session
-  const existingIndex = sessionTranscripts.findIndex(
-    item => item.userId === userId && item.transcript === transcript
-  )
-  
-  if (existingIndex === -1) {
-    // ไม่มีซ้ำ เพิ่มใหม่
-    sessionTranscripts.push({
-      userId,
-      transcript,
-      confidence,
-      timestamp: new Date().toISOString()
-    })
-    console.log(`📝 เพิ่ม transcript ในเซสชัน: "${transcript}" (${(confidence * 100).toFixed(1)}%)`)
-    console.log(`📊 sessionTranscripts.length = ${sessionTranscripts.length}`)
-  } else {
-    console.log(`⚠️ ข้าม transcript ที่ซ้ำ: "${transcript}"`)
+  // 🔥 ตรวจสอบ transcript ที่ผิดปกติก่อน
+  if (isInvalidTranscript(transcript)) {
+    console.log(`⚠️ ข้าม transcript ที่ผิดปกติ: "${transcript.substring(0, 50)}..."`)
+    return // หยุดทันที ไม่ทำอะไรเลย
   }
   
-  if (!isRecording) {
-    console.log(`⚠️ ไม่เพิ่ม transcript เพราะ isRecording = false`)
+  // 🔥 คืน logic เดิม: ทำงานเฉพาะเมื่อ isRecording = true
+  if (isRecording) {
+    // ตรวจสอบ duplicate transcript ในเซสชัน
+    const existingIndex = sessionTranscripts.findIndex(
+      item => item.userId === userId && item.transcript === transcript
+    )
+    
+    if (existingIndex === -1) {
+      // ไม่มีซ้ำ เพิ่มใหม่ในเซสชัน
+      sessionTranscripts.push({
+        userId,
+        transcript,
+        confidence,
+        timestamp: new Date().toISOString()
+      })
+      console.log(`📝 เพิ่ม transcript ในเซสชัน: "${transcript}" (${(confidence * 100).toFixed(1)}%)`)
+      console.log(`📊 sessionTranscripts.length = ${sessionTranscripts.length}`)
+    } else {
+      console.log(`⚠️ ข้าม transcript ที่ซ้ำในเซสชัน: "${transcript}"`)
+    }
+    
+    // 🔥 ส่งไป Discord ทันที (real-time display)
+    await sendTranscriptToDiscord(userId, transcript, confidence)
+    
+  } else {
+    console.log(`⚠️ ไม่ประมวลผล transcript เพราะ isRecording = false`)
   }
 }
 
