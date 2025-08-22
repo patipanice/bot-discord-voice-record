@@ -13,8 +13,8 @@ export class ClickUpService {
    */
   public async testConnection(): Promise<boolean> {
     try {
-      const { clickUpAPI } = await import('../clickup-api')
-      return await clickUpAPI.testConnection()
+      const clickUpModule = await import('../clickup-api')
+      return await clickUpModule.clickUpAPI.testConnection()
     } catch (error) {
       console.error('❌ เกิดข้อผิดพลาดในการทดสอบ ClickUp connection:', error)
       return false

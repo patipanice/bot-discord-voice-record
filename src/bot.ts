@@ -249,6 +249,9 @@ const client = new Client({
 client.once('ready', async () => {
   console.log(`✅ Logged in as ${client.user?.tag}`)
   
+  // เริ่มต้น Services และ BLL ก่อน
+  initializeServices()
+  
   // โหลด channel ที่บันทึกไว้
   const savedChannelId = loadSavedChannel()
   if (savedChannelId) {
