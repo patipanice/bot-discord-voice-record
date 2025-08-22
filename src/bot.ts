@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, AttachmentBuilder, EmbedBuilder, TextChannel } from 'discord.js'
+import { Client, GatewayIntentBits, EmbedBuilder, TextChannel } from 'discord.js'
 import * as dotenv from 'dotenv'
 import { joinVoiceAndRecord, leaveVoiceChannel } from './recorder'
 import { readFileSync, existsSync, writeFileSync } from 'fs'
@@ -42,6 +42,14 @@ function formatTimestamp(timestamp: string): string {
 // ตัวแปร global สำหรับเก็บ channel ที่จะส่งข้อความ
 let transcriptChannel: TextChannel | null = null
 let pendingTranscriptions = 0 // จำนวนการแปลงเสียงที่ยังไม่เสร็จ
+let isRecording = false
+let sessionTranscripts: Array<{
+  timestamp: string,
+  transcript: string,
+  confidence: number,
+  userId: string
+}> = []
+let userMapping: Record<string, string> = {}
 
 // Services & BLL
 let clickUpService: ClickUpService
@@ -908,7 +916,6 @@ async function sendUserTaskMatches(email: string, transcripts: string[], matches
     if (!transcriptChannel) return
     
     const topMatch = matches[0]
-    
     // หา Discord user จาก email mapping
     const discordUserId = Object.keys(userMapping).find(id => userMapping[id] === email)
     let userDisplayName = email
