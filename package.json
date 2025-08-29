@@ -8,7 +8,12 @@
     "dev": "nodemon --exec ts-node src/bot.ts",
     "test:matcher": "node test/test-task-matcher.js",
     "test:clickup": "node test/test-clickup-api.js",
-    "test:all": "npm run test:clickup && npm run test:matcher",
+    "test:flow": "node test/test-full-discord-flow.js",
+    "test:recording": "node test/test-voice-recording-integration.js",
+    "test:real": "node test/test-real-bot-integration.js",
+    "test:audio": "node test/test-with-real-audio.js",
+    "test:all": "npm run test:clickup && npm run test:matcher && npm run test:flow && npm run test:recording",
+    "test:real-all": "npm run test:real && npm run test:audio",
     "clean": "rm -rf recordings/*.pcm recordings/*.wav",
     "clean:all": "rm -rf recordings/* && echo '1399594930355306650' > recordings/saved_channel.txt"
   },

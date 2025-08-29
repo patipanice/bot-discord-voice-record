@@ -95,6 +95,10 @@ function initializeServices(): void {
     filePath: 'config/user-mapping.json'
   })
 
+  // โหลด userMapping จาก service
+  userMapping = userMappingService.getAllMappings()
+  console.log(`👥 โหลด user mapping: ${Object.keys(userMapping).length} คน`)
+
   // Initialize TranscriptManagerService  
   transcriptManager = new TranscriptManagerService()
 
@@ -124,6 +128,11 @@ async function initializeClickUp(): Promise<boolean> {
       console.log('⚠️ ไม่สามารถเชื่อมต่อ ClickUp API')
       return false
     }
+    
+    // โหลด team tasks แทนที่จะโหลด user tasks
+    console.log('📋 โหลด team tasks...')
+    userClickUpTasks = await clickUpService.loadAllTeamTasks()
+    console.log(`✅ โหลด ${userClickUpTasks.length} team tasks`)
     
     clickUpEnabled = true
     // อัปเดต ClickUpService config
@@ -313,6 +322,7 @@ client.on('messageCreate', async (message) => {
   }
   
   if (message.content === '!leave') {
+    console.log(`👤 !leave command received from: ${message.author.tag} (${message.author.id})`)
     console.log(`🔍 ตรวจสอบ: sessionTranscripts.length = ${sessionTranscripts.length}`)
     console.log(`🔍 ตรวจสอบ: transcriptChannel = ${transcriptChannel ? transcriptChannel.name : 'null'}`)
     console.log(`🔍 ตรวจสอบ: isRecording = ${isRecording}`)
