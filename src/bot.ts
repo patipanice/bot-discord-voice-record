@@ -50,6 +50,8 @@ let sessionTranscripts: Array<{
   userId: string
 }> = []
 let userMapping: Record<string, string> = {}
+let sentTranscriptIds = new Set<string>() // เพิ่ม: เก็บ ID ของ transcripts ที่ส่งแล้ว
+let isSendingSummary = false // เพิ่ม: ป้องกันการส่งซ้ำ
 
 // Services & BLL
 let clickUpService: ClickUpService
@@ -708,6 +710,9 @@ export async function addSessionTranscript(userId: string, transcript: string, c
   
   // 🔥 คืน logic เดิม: ทำงานเฉพาะเมื่อ isRecording = true
   if (isRecording) {
+    // สร้าง unique ID สำหรับ transcript
+    const transcriptId = `${userId}_${transcript}_${Date.now()}`
+    
     // ตรวจสอบ duplicate transcript ในเซสชัน
     const existingIndex = sessionTranscripts.findIndex(
       item => item.userId === userId && item.transcript === transcript
@@ -723,12 +728,15 @@ export async function addSessionTranscript(userId: string, transcript: string, c
       })
       console.log(`📝 เพิ่ม transcript ในเซสชัน: "${transcript}" (${(confidence * 100).toFixed(1)}%)`)
       console.log(`📊 sessionTranscripts.length = ${sessionTranscripts.length}`)
+      
+      // 🔥 ส่งไป Discord ทันที (real-time display) เฉพาะเมื่อยังไม่ส่ง
+      if (!sentTranscriptIds.has(transcriptId)) {
+        await sendTranscriptToDiscord(userId, transcript, confidence)
+        sentTranscriptIds.add(transcriptId) // เก็บ ID ที่ส่งแล้ว
+      }
     } else {
       console.log(`⚠️ ข้าม transcript ที่ซ้ำในเซสชัน: "${transcript}"`)
     }
-    
-    // 🔥 ส่งไป Discord ทันที (real-time display)
-    await sendTranscriptToDiscord(userId, transcript, confidence)
     
   } else {
     console.log(`⚠️ ไม่ประมวลผล transcript เพราะ isRecording = false`)
