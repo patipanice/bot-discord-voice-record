@@ -3,17 +3,22 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "start": "node dist/bot.js",
-    "start:ts": "ts-node src/bot.ts",
+    "start": "ts-node src/bot.ts",
     "build": "tsc",
-    "dev": "ts-node --watch src/bot.ts",
+    "dev": "nodemon --exec ts-node src/bot.ts",
     "test:matcher": "node test/test-task-matcher.js",
     "test:clickup": "node test/test-clickup-api.js",
     "test:all": "npm run test:clickup && npm run test:matcher",
     "clean": "rm -rf recordings/*.pcm recordings/*.wav",
     "clean:all": "rm -rf recordings/* && echo '1399594930355306650' > recordings/saved_channel.txt"
   },
-  "keywords": ["discord", "voice", "recorder", "transcription", "whisper"],
+  "keywords": [
+    "discord",
+    "voice",
+    "recorder",
+    "transcription",
+    "whisper"
+  ],
   "author": "",
   "license": "ISC",
   "description": "Discord voice recorder with real-time transcription using Colab API",
@@ -29,6 +34,7 @@
   "devDependencies": {
     "@types/node": "^24.1.0",
     "@types/wav": "^1.0.4",
+    "nodemon": "^3.1.10",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.3"
   }
